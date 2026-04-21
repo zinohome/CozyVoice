@@ -1,0 +1,8 @@
+services:
+  cozy-voice:
+    build: .
+    image: cozy-voice:latest
+    ports: ["8002:8002"]
+    env_file: [.env]
+    environment:
+      LOG_LEVEL: INFO

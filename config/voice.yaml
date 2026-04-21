@@ -1,0 +1,23 @@
+voice:
+  stt:
+    provider: mock
+    openai:
+      api_key: ${OPENAI_API_KEY}
+      model: whisper-1
+
+  tts:
+    provider: mock
+    default_voice_id: "101001"
+    default_format: wav
+    tencent:
+      secret_id: ${TENCENT_SECRET_ID}
+      secret_key: ${TENCENT_SECRET_KEY}
+      region: ${TENCENT_REGION:-ap-guangzhou}
+
+  brain:
+    base_url: ${BRAIN_URL:-http://localhost:8000}
+    timeout: 60.0
+
+  api:
+    host: ${VOICE_HOST:-0.0.0.0}
+    port: ${VOICE_PORT:-8002}
