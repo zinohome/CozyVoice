@@ -4,10 +4,10 @@
 # 部署前准备：
 #   1. 构建本地镜像：cd deploy/base_runtime && ./build.sh
 #   2. 准备 .env（复制仓库根 .env.example）
-#   3. 确保外部网络存在：docker network create cozyengine-network（或 1panel-network）
+#   3. 确保外部网络存在：docker network create 1panel-network（或 1panel-network）
 #
 # 数据目录：/data/CozyVoice/
-# 网络：cozyengine-network（external）
+# 网络：1panel-network（external）
 
 services:
 
@@ -27,7 +27,7 @@ services:
     volumes:
       - /data/CozyVoice/logs:/app/logs
     networks:
-      - cozyengine-network
+      - 1panel-network
     labels:
       createdBy: "Apps"
     deploy:
@@ -54,7 +54,7 @@ services:
       - "7881:7881"     # TCP fallback
       - "7882:7882/udp" # WebRTC/TURN UDP
     networks:
-      - cozyengine-network
+      - 1panel-network
     labels:
       createdBy: "Apps"
     deploy:
@@ -80,10 +80,10 @@ services:
     depends_on:
       - cozy_voice
     networks:
-      - cozyengine-network
+      - 1panel-network
     labels:
       createdBy: "Apps"
 
 networks:
-  cozyengine-network:
+  1panel-network:
     external: true
