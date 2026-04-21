@@ -6,3 +6,14 @@ services:
     env_file: [.env]
     environment:
       LOG_LEVEL: INFO
+    depends_on:
+      - livekit
+
+  # 开发用 LiveKit server。生产大多接 LiveKit Cloud，不需要此服务。
+  livekit:
+    image: livekit/livekit-server:latest
+    command: --dev --bind 0.0.0.0
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"

@@ -1,0 +1,12 @@
+# CozyVoice 反向代理配置
+# :8002 → cozy_voice:8002（FastAPI REST + WS）
+
+:8002 {
+	# WebSocket 升级自动透传
+	reverse_proxy cozy_voice:8002
+}
+
+# 如 compose 中启用 cozy_livekit 服务，再放开此段
+# :7880 {
+# 	reverse_proxy cozy_livekit:7880
+# }

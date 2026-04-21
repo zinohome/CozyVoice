@@ -1,0 +1,89 @@
+# CozyVoice Base Runtime
+# 1Panel 专用 Docker Compose 编排文件
+#
+# 部署前准备：
+#   1. 构建本地镜像：cd deploy/base_runtime && ./build.sh
+#   2. 准备 .env（复制仓库根 .env.example）
+#   3. 确保外部网络存在：docker network create cozyengine-network（或 1panel-network）
+#
+# 数据目录：/data/CozyVoice/
+# 网络：cozyengine-network（external）
+
+services:
+
+  # ==========================================
+  # CozyVoice FastAPI 服务（REST + WS）
+  # ==========================================
+  cozy_voice:
+    image: cozy-voice:latest
+    container_name: cozy_voice
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      LOG_LEVEL: INFO
+      VOICE_HOST: 0.0.0.0
+      VOICE_PORT: 8002
+    volumes:
+      - /data/CozyVoice/logs:/app/logs
+    networks:
+      - cozyengine-network
+    labels:
+      createdBy: "Apps"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+        reservations:
+          memory: 256m
+
+  # ==========================================
+  # LiveKit Server（可选）
+  # ------------------------------------------
+  # 生产推荐使用 LiveKit Cloud；自部署仅需解除注释。
+  # 注意：生产需换掉 --dev 模式，配置 keys.yaml 与 TURN。
+  # ==========================================
+  cozy_livekit:
+    image: livekit/livekit-server:latest
+    container_name: cozy_livekit
+    restart: unless-stopped
+    command: --dev --bind 0.0.0.0
+    # 信令/WebRTC 端口必须主机网络或显式映射 UDP
+    ports:
+      - "7880:7880"     # HTTP/WebSocket 信令
+      - "7881:7881"     # TCP fallback
+      - "7882:7882/udp" # WebRTC/TURN UDP
+    networks:
+      - cozyengine-network
+    labels:
+      createdBy: "Apps"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+        reservations:
+          memory: 256m
+
+  # ==========================================
+  # Caddy 反向代理
+  # ==========================================
+  caddy:
+    image: caddy:alpine
+    container_name: cozy_voice_caddy
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /data/CozyVoice/caddy/data:/data
+      - /data/CozyVoice/caddy/config:/config
+    depends_on:
+      - cozy_voice
+    networks:
+      - cozyengine-network
+    labels:
+      createdBy: "Apps"
+
+networks:
+  cozyengine-network:
+    external: true
