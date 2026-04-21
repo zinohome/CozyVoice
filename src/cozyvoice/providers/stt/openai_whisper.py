@@ -12,8 +12,8 @@ from cozyvoice.providers.base import STTProvider, STTResult
 class OpenAIWhisperSTT(STTProvider):
     name = "openai_whisper"
 
-    def __init__(self, api_key: str, model: str = "whisper-1") -> None:
-        self._client = AsyncOpenAI(api_key=api_key)
+    def __init__(self, api_key: str, model: str = "whisper-1", base_url: str | None = None) -> None:
+        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self._model = model
 
     async def transcribe(

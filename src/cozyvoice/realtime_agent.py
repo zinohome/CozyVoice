@@ -45,6 +45,7 @@ async def handle_realtime_call(
     brain_url: str,
     openai_api_key: str,
     openai_model: str = "gpt-4o-realtime-preview",
+    openai_base_url: str | None = None,
 ) -> None:
     """驱动一次完整的 Realtime 通话。参数 audio_in/out 是 asyncio.Queue 供上层（LiveKit room）喂帧。"""
 
@@ -73,7 +74,7 @@ async def handle_realtime_call(
         tools = ctx.get("allowed_tools") or []
 
         # 2) 建 Realtime
-        provider = OpenAIRealtimeProvider(api_key=openai_api_key, model=openai_model)
+        provider = OpenAIRealtimeProvider(api_key=openai_api_key, model=openai_model, base_url=openai_base_url)
         rt_session = await provider.open_session(instructions=instructions, voice=voice, tools=tools)
 
         try:

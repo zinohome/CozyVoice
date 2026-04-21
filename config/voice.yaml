@@ -3,6 +3,7 @@ voice:
     provider: mock
     openai:
       api_key: ${OPENAI_API_KEY}
+      base_url: ${OPENAI_BASE_URL:-}   # 空则走官方
       model: whisper-1
 
   tts:
@@ -26,7 +27,8 @@ voice:
     provider: openai_realtime
     openai:
       api_key: ${OPENAI_API_KEY}
-      model: gpt-4o-realtime-preview
+      base_url: ${OPENAI_REALTIME_BASE_URL:-}   # 独立变量；多数代理不支持 Realtime，留空走官方 wss
+      model: ${OPENAI_REALTIME_MODEL:-gpt-4o-realtime-preview}
     # livekit 段留给 γ（TODO）：
     # livekit:
     #   url: ${LIVEKIT_URL}

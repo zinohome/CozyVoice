@@ -27,7 +27,11 @@ def _build_stt(cfg: dict):
     stt_cfg = cfg.get("stt", {})
     provider = stt_cfg.get("provider", "mock")
     if provider == "openai_whisper":
-        return OpenAIWhisperSTT(api_key=stt_cfg["openai"]["api_key"], model=stt_cfg["openai"].get("model", "whisper-1"))
+        return OpenAIWhisperSTT(
+            api_key=stt_cfg["openai"]["api_key"],
+            model=stt_cfg["openai"].get("model", "whisper-1"),
+            base_url=stt_cfg["openai"].get("base_url") or None,
+        )
     return MockSTT()
 
 

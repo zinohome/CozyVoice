@@ -70,9 +70,28 @@ class OpenAIRealtimeSession(RealtimeSession):
 class OpenAIRealtimeProvider(RealtimeProvider):
     name = "openai_realtime"
 
-    def __init__(self, api_key: str, model: str = "gpt-4o-realtime-preview") -> None:
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gpt-4o-realtime-preview",
+        base_url: str | None = None,
+    ) -> None:
+        """base_url：可选，OpenAI-compatible 代理的 Realtime WS 入口。
+
+        默认 wss://api.openai.com/v1/realtime。若传入 http(s)://... 会自动替换 scheme 为 ws(s)://。
+        **注意**：多数 OpenAI 代理（如 oneapi）不支持 Realtime WebSocket，此时应不填或回退官方。
+        """
         self._api_key = api_key
         self._model = model
+        if base_url:
+            # http:// → ws://, https:// → wss://
+            ws_base = base_url.replace("https://", "wss://", 1).replace("http://", "ws://", 1).rstrip("/")
+            # 若 base 未带 /realtime 路径后缀则自动拼
+            if not ws_base.endswith("/realtime"):
+                ws_base = f"{ws_base}/realtime"
+            self._ws_base = ws_base
+        else:
+            self._ws_base = _OPENAI_REALTIME_URL
 
     async def open_session(
         self,
@@ -80,7 +99,7 @@ class OpenAIRealtimeProvider(RealtimeProvider):
         voice: str = "alloy",
         tools: list[dict] | None = None,
     ) -> RealtimeSession:
-        url = f"{_OPENAI_REALTIME_URL}?model={self._model}"
+        url = f"{self._ws_base}?model={self._model}"
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "OpenAI-Beta": "realtime=v1",
