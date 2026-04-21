@@ -64,3 +64,54 @@ class BrainClient:
                 piece = delta.get("content") or ""
                 collected += piece
         return collected
+
+    async def fetch_voice_context(
+        self,
+        jwt: str,
+        session_id: str,
+        personality_id: str,
+    ) -> dict:
+        """GET voice context（人格 + 画像 + 记忆摘要 + 工具）。"""
+        if self._client is None:
+            raise RuntimeError("BrainClient not started")
+        headers = {"Authorization": f"Bearer {jwt}", "X-Source-Channel": "voice-realtime"}
+        body = {"session_id": session_id, "personality_id": personality_id}
+        r = await self._client.post("/v1/chat/voice_context", json=body, headers=headers)
+        r.raise_for_status()
+        return r.json()
+
+    async def tool_proxy(
+        self,
+        jwt: str,
+        session_id: str,
+        tool_name: str,
+        arguments: dict,
+    ) -> dict:
+        """Realtime function_call → Brain → Cerebellum → 返回结果给 Realtime。"""
+        if self._client is None:
+            raise RuntimeError("BrainClient not started")
+        headers = {"Authorization": f"Bearer {jwt}", "X-Source-Channel": "voice-realtime"}
+        body = {"session_id": session_id, "tool_name": tool_name, "arguments": arguments}
+        r = await self._client.post("/v1/tool_proxy", json=body, headers=headers)
+        r.raise_for_status()
+        return r.json()
+
+    async def voice_summary(
+        self,
+        jwt: str,
+        session_id: str,
+        turns: list[dict],
+        tool_calls: list[dict] | None = None,
+    ) -> dict:
+        """会话结束后把 transcript + tool_calls 上报给 Brain 落库+写记忆。"""
+        if self._client is None:
+            raise RuntimeError("BrainClient not started")
+        headers = {"Authorization": f"Bearer {jwt}", "X-Source-Channel": "voice-realtime"}
+        body = {
+            "session_id": session_id,
+            "turns": turns,
+            "tool_calls": tool_calls or [],
+        }
+        r = await self._client.post("/v1/chat/voice_summary", json=body, headers=headers)
+        r.raise_for_status()
+        return r.json()

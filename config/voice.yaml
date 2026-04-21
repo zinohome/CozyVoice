@@ -21,3 +21,14 @@ voice:
   api:
     host: ${VOICE_HOST:-0.0.0.0}
     port: ${VOICE_PORT:-8002}
+
+  realtime:
+    provider: openai_realtime
+    openai:
+      api_key: ${OPENAI_API_KEY}
+      model: gpt-4o-realtime-preview
+    # livekit 段留给 γ（TODO）：
+    # livekit:
+    #   url: ${LIVEKIT_URL}
+    #   api_key: ${LIVEKIT_API_KEY}
+    #   api_secret: ${LIVEKIT_API_SECRET}
