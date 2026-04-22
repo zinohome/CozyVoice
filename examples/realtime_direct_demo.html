@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>CozyVoice Realtime Direct Demo (No LiveKit)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!--
+    ====== 真 key 到位后的验证步骤 ======
+    1) 起 Brain：uvicorn backend.main:app --port 8100
+       确保 /v1/voice/ephemeral-token 已部署，OPENAI_API_KEY 配置在 Brain 侧。
+    2) 静态托管本文件：cd examples && python3 -m http.server 8099
+       浏览器打开 http://localhost:8099/realtime_direct_demo.html
+       （注意：file:// 协议下 getUserMedia 可能被阻，必须 http://）
+    3) 登录 Brain 拿 JWT，粘贴到页面的 Brain JWT 框。
+       填入 session_id / personality_id（UUID）。
+    4) 点 "开始通话"：
+       - Network tab 看到 POST /v1/voice/ephemeral-token → 200
+       - 授权麦克风
+       - 日志出现 "session.created"
+       - 开口说话 → 停顿 → 听到 agent 应答
+    5) 常见错误：
+       - 401 → JWT 过期或无效
+       - NotAllowedError → 浏览器拒绝麦克风
+       - WS close 4xxx → token 过期 / 模型不支持 / OpenAI 侧拒绝
+    ==========================================
+  -->
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; color: #222; }
+    h1 { font-size: 20px; margin-bottom: 4px; }
+    .sub { color: #888; font-size: 13px; margin-bottom: 24px; }
+    label { display: block; margin-top: 12px; font-size: 13px; color: #555; }
+    input { width: 100%; padding: 8px 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; font-family: ui-monospace, monospace; }
+    button { margin-top: 20px; padding: 10px 18px; background: #2563eb; color: #fff; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; }
+    button:disabled { background: #9ca3af; cursor: not-allowed; }
+    .status { margin-top: 20px; padding: 12px; background: #f3f4f6; border-left: 3px solid #2563eb; border-radius: 2px; font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; min-height: 60px; max-height: 280px; overflow-y: auto; }
+    .status.error { border-color: #dc2626; background: #fef2f2; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; background: #e5e7eb; color: #374151; margin-right: 6px; }
+    .badge.on { background: #bbf7d0; color: #166534; }
+    .badge.err { background: #fecaca; color: #991b1b; }
+  </style>
+</head>
+<body>
+  <h1>CozyVoice Realtime Direct Demo (No LiveKit)</h1>
+  <div class="sub">浏览器直连 OpenAI Realtime WS → Brain 代发短期 token。</div>
+
+  <label>Brain Base URL</label>
+  <input id="base" value="http://127.0.0.1:8100" />
+
+  <label>Brain JWT</label>
+  <input id="jwt" placeholder="eyJhbGciOi..." />
+
+  <label>Session ID（UUID）</label>
+  <input id="sess" placeholder="00000000-0000-0000-0000-000000000000" />
+
+  <label>Personality ID（UUID）</label>
+  <input id="pid" placeholder="00000000-0000-0000-0000-000000000000" />
+
+  <button id="start">开始通话</button>
+  <button id="stop" disabled>挂断</button>
+
+  <div>
+    <span class="badge" id="b-conn">未连接</span>
+    <span class="badge" id="b-mic">麦克风 off</span>
+    <span class="badge" id="b-recv">无 Agent 音频</span>
+  </div>
+  <div class="status" id="status"><div id="log">就绪。</div></div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const logEl = $("log");
+    const logs = [];
+    const log = (msg, isErr = false) => {
+      console.log(msg);
+      const ts = new Date().toISOString().slice(11, 19);
+      logs.push(`[${ts}] ${msg}`);
+      if (logs.length > 200) logs.shift();
+      logEl.textContent = logs.join("\n");
+      $("status").classList.toggle("error", isErr);
+      $("status").scrollTop = $("status").scrollHeight;
+    };
+    const setBadge = (id, text, cls = "") => {
+      const el = $(id);
+      el.textContent = text;
+      el.className = "badge" + (cls ? " " + cls : "");
+    };
+
+    // ===== 音频工具 =====
+    function floatTo16BitPCM(float32) {
+      const int16 = new Int16Array(float32.length);
+      for (let i = 0; i < float32.length; i++) {
+        const s = Math.max(-1, Math.min(1, float32[i]));
+        int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+      return int16;
+    }
+    function arrayBufferToBase64(buffer) {
+      let binary = "";
+      const bytes = new Uint8Array(buffer);
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+      }
+      return btoa(binary);
+    }
+    function base64ToArrayBuffer(b64) {
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return bytes.buffer;
+    }
+    // PCM16 → Float32 @ srcRate，线性重采样到 dstRate
+    function pcm16ToFloat32Resampled(arrayBuffer, srcRate, dstRate) {
+      const int16 = new Int16Array(arrayBuffer);
+      const srcLen = int16.length;
+      if (srcRate === dstRate) {
+        const out = new Float32Array(srcLen);
+        for (let i = 0; i < srcLen; i++) out[i] = int16[i] / 0x8000;
+        return out;
+      }
+      const ratio = srcRate / dstRate;
+      const dstLen = Math.floor(srcLen / ratio);
+      const out = new Float32Array(dstLen);
+      for (let i = 0; i < dstLen; i++) {
+        const srcIdx = i * ratio;
+        const i0 = Math.floor(srcIdx);
+        const i1 = Math.min(i0 + 1, srcLen - 1);
+        const frac = srcIdx - i0;
+        const s = int16[i0] * (1 - frac) + int16[i1] * frac;
+        out[i] = s / 0x8000;
+      }
+      return out;
+    }
+    // Float32 @ srcRate → Float32 @ dstRate (线性重采样)
+    function resampleFloat32(input, srcRate, dstRate) {
+      if (srcRate === dstRate) return input;
+      const ratio = srcRate / dstRate;
+      const dstLen = Math.floor(input.length / ratio);
+      const out = new Float32Array(dstLen);
+      for (let i = 0; i < dstLen; i++) {
+        const srcIdx = i * ratio;
+        const i0 = Math.floor(srcIdx);
+        const i1 = Math.min(i0 + 1, input.length - 1);
+        const frac = srcIdx - i0;
+        out[i] = input[i0] * (1 - frac) + input[i1] * frac;
+      }
+      return out;
+    }
+
+    // ===== 状态 =====
+    const TARGET_RATE = 24000; // OpenAI Realtime 期望
+    let ws = null;
+    let audioCtx = null;
+    let micStream = null;
+    let micSource = null;
+    let processor = null;
+    let playbackCursor = 0; // 播放调度游标 (AudioContext time)
+    let agentPlaying = false;
+
+    async function fetchEphemeralToken(base, jwt, sessionId, personalityId) {
+      const url = base.replace(/\/+$/, "") + "/v1/voice/ephemeral-token";
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + jwt,
+        },
+        body: JSON.stringify({ session_id: sessionId, personality_id: personalityId }),
+      });
+      if (res.status === 401) throw new Error("401 Brain JWT 无效或已过期");
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(`Brain ${res.status}: ${txt.slice(0, 200)}`);
+      }
+      return await res.json();
+    }
+
+    function openRealtimeWS(wsUrl, token) {
+      return new Promise((resolve, reject) => {
+        let sock;
+        try {
+          sock = new WebSocket(wsUrl, [
+            "realtime",
+            "openai-insecure-api-key." + token,
+            "openai-beta.realtime-v1",
+          ]);
+        } catch (e) {
+          reject(new Error("WebSocket 构造失败: " + e.message));
+          return;
+        }
+        const to = setTimeout(() => {
+          try { sock.close(); } catch {}
+          reject(new Error("WS 连接超时（检查 ws_url / token）"));
+        }, 15000);
+        sock.addEventListener("open", () => {
+          clearTimeout(to);
+          resolve(sock);
+        });
+        sock.addEventListener("error", (ev) => {
+          clearTimeout(to);
+          reject(new Error("WS 连接错误（查看 Console）"));
+        });
+      });
+    }
+
+    function handleRealtimeEvent(ev) {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch { return; }
+      switch (msg.type) {
+        case "session.created":
+          log("session.created id=" + (msg.session && msg.session.id));
+          break;
+        case "session.updated":
+          log("session.updated");
+          break;
+        case "input_audio_buffer.speech_started":
+          log("> user speaking");
+          break;
+        case "input_audio_buffer.speech_stopped":
+          log("> user stopped");
+          break;
+        case "response.audio.delta":
+          if (msg.delta) {
+            scheduleAudioChunk(msg.delta);
+            setBadge("b-recv", "Agent 音频 on", "on");
+          }
+          break;
+        case "response.audio.done":
+          log("< agent audio done");
+          break;
+        case "response.text.delta":
+          if (msg.delta) log("text: " + msg.delta);
+          break;
+        case "response.done":
+          log("< response.done");
+          break;
+        case "error":
+          log("ERR: " + JSON.stringify(msg.error || msg), true);
+          break;
+        default:
+          // 安静忽略无关事件
+          break;
+      }
+    }
+
+    function scheduleAudioChunk(b64) {
+      if (!audioCtx) return;
+      const ab = base64ToArrayBuffer(b64);
+      const float = pcm16ToFloat32Resampled(ab, TARGET_RATE, audioCtx.sampleRate);
+      const buf = audioCtx.createBuffer(1, float.length, audioCtx.sampleRate);
+      buf.getChannelData(0).set(float);
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(audioCtx.destination);
+      const now = audioCtx.currentTime;
+      if (playbackCursor < now) playbackCursor = now + 0.02;
+      src.start(playbackCursor);
+      playbackCursor += buf.duration;
+    }
+
+    async function startMic() {
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: TARGET_RATE, // 提示 (浏览器未必严格遵守)
+          },
+        });
+      } catch (e) {
+        throw new Error("麦克风权限被拒绝或不可用: " + e.name);
+      }
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      micSource = audioCtx.createMediaStreamSource(micStream);
+      // ScriptProcessor 过时但免打包够用；buffer=4096 单声道
+      processor = audioCtx.createScriptProcessor(4096, 1, 1);
+      processor.onaudioprocess = (e) => {
+        if (!ws || ws.readyState !== 1) return;
+        const input = e.inputBuffer.getChannelData(0);
+        const resampled = resampleFloat32(input, audioCtx.sampleRate, TARGET_RATE);
+        const pcm16 = floatTo16BitPCM(resampled);
+        const b64 = arrayBufferToBase64(pcm16.buffer);
+        ws.send(JSON.stringify({ type: "input_audio_buffer.append", audio: b64 }));
+      };
+      micSource.connect(processor);
+      // 必须连到 destination 否则部分浏览器不调 onaudioprocess；用 0 增益避免回环
+      const mute = audioCtx.createGain();
+      mute.gain.value = 0;
+      processor.connect(mute);
+      mute.connect(audioCtx.destination);
+      setBadge("b-mic", "麦克风 on", "on");
+    }
+
+    function stopAll() {
+      try { if (processor) processor.disconnect(); } catch {}
+      try { if (micSource) micSource.disconnect(); } catch {}
+      try { if (micStream) micStream.getTracks().forEach(t => t.stop()); } catch {}
+      try { if (audioCtx) audioCtx.close(); } catch {}
+      try { if (ws) ws.close(); } catch {}
+      processor = micSource = micStream = audioCtx = ws = null;
+      playbackCursor = 0;
+      setBadge("b-conn", "未连接");
+      setBadge("b-mic", "麦克风 off");
+      setBadge("b-recv", "无 Agent 音频");
+      $("start").disabled = false;
+      $("stop").disabled = true;
+    }
+
+    $("start").onclick = async () => {
+      const base = $("base").value.trim();
+      const jwt = $("jwt").value.trim();
+      const sess = $("sess").value.trim();
+      const pid = $("pid").value.trim();
+      if (!base || !jwt || !sess || !pid) {
+        log("请填写全部字段", true);
+        return;
+      }
+      $("start").disabled = true;
+      $("stop").disabled = false;
+      try {
+        log("请求 Brain ephemeral token...");
+        const tok = await fetchEphemeralToken(base, jwt, sess, pid);
+        log(`got token, model=${tok.model} voice=${tok.voice} ws=${tok.ws_url}`);
+        setBadge("b-conn", "连接中...");
+        ws = await openRealtimeWS(tok.ws_url, tok.token);
+        setBadge("b-conn", "已连接", "on");
+        log("WS open, 等待 session.created...");
+        ws.addEventListener("message", handleRealtimeEvent);
+        ws.addEventListener("close", (ev) => {
+          log(`WS closed code=${ev.code} reason=${ev.reason || "(none)"}`, ev.code !== 1000);
+          setBadge("b-conn", "已断开", "err");
+        });
+        ws.addEventListener("error", () => {
+          log("WS error (详情见 Console)", true);
+        });
+        // session.update：PCM16、24kHz、server_vad
+        ws.send(JSON.stringify({
+          type: "session.update",
+          session: {
+            modalities: ["audio", "text"],
+            input_audio_format: "pcm16",
+            output_audio_format: "pcm16",
+            turn_detection: { type: "server_vad" },
+            voice: tok.voice || "alloy",
+          },
+        }));
+        await startMic();
+        log("mic started @ ctx=" + audioCtx.sampleRate + "Hz, 重采样到 " + TARGET_RATE);
+      } catch (e) {
+        log("启动失败: " + e.message, true);
+        stopAll();
+      }
+    };
+
+    $("stop").onclick = () => {
+      log("挂断");
+      stopAll();
+    };
+
+    window.addEventListener("beforeunload", stopAll);
+  </script>
+</body>
+</html>
