@@ -27,7 +27,7 @@ voice:
     provider: openai_realtime
     openai:
       api_key: ${OPENAI_API_KEY}
-      base_url: ${OPENAI_REALTIME_BASE_URL:-}   # 独立变量；多数代理不支持 Realtime，留空走官方 wss
+      base_url: ${OPENAI_BASE_URL:-}   # 与 STT/Chat 共用；支持 Realtime 的代理（如 New-API）直接复用
       model: ${OPENAI_REALTIME_MODEL:-gpt-4o-realtime-preview}
     # livekit 段留给 γ（TODO）：
     # livekit:

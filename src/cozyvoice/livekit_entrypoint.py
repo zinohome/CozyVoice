@@ -208,6 +208,7 @@ async def _handle_participant(
 
     brain_url = os.environ.get("BRAIN_URL", "http://localhost:8000")
     openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+    openai_base_url = os.environ.get("OPENAI_BASE_URL") or None
     openai_model = os.environ.get(
         "OPENAI_REALTIME_MODEL", "gpt-4o-realtime-preview"
     )
@@ -219,6 +220,7 @@ async def _handle_participant(
             state=state,
             brain_url=brain_url,
             openai_api_key=openai_api_key,
+            openai_base_url=openai_base_url,
             openai_model=openai_model,
         ),
         name=f"call-{participant.identity}",

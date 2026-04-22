@@ -76,10 +76,10 @@ class OpenAIRealtimeProvider(RealtimeProvider):
         model: str = "gpt-4o-realtime-preview",
         base_url: str | None = None,
     ) -> None:
-        """base_url：可选，OpenAI-compatible 代理的 Realtime WS 入口。
+        """base_url：可选，OpenAI-compatible 代理的 Realtime 入口。
 
         默认 wss://api.openai.com/v1/realtime。若传入 http(s)://... 会自动替换 scheme 为 ws(s)://。
-        **注意**：多数 OpenAI 代理（如 oneapi）不支持 Realtime WebSocket，此时应不填或回退官方。
+        支持 Realtime 的代理（如 New-API）可与 Chat/STT 共用同一个 base_url。
         """
         self._api_key = api_key
         self._model = model
