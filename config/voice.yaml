@@ -1,13 +1,13 @@
 voice:
   stt:
-    provider: mock
+    provider: openai_whisper
     openai:
       api_key: ${OPENAI_API_KEY}
       base_url: ${OPENAI_BASE_URL:-}   # 空则走官方
       model: whisper-1
 
   tts:
-    provider: mock
+    provider: tencent
     default_voice_id: "101001"
     default_format: wav
     tencent:
