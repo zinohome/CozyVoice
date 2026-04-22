@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -100,11 +101,22 @@ class OpenAIRealtimeProvider(RealtimeProvider):
         tools: list[dict] | None = None,
     ) -> RealtimeSession:
         url = f"{self._ws_base}?model={self._model}"
-        headers = {
-            "Authorization": f"Bearer {self._api_key}",
-            "OpenAI-Beta": "realtime=v1",
-        }
-        ws = await websockets.connect(url, additional_headers=headers)
+        # OpenAI Realtime 要求 **只用 header 或 subprotocol 二选一**，
+        # 同时发两者 → 4000 "You must only send one beta header or protocol entry."
+        # 用 subprotocol-only（代理/浏览器通用兼容），不再发 OpenAI-Beta header。
+        headers = {"Authorization": f"Bearer {self._api_key}"}
+        ws = await websockets.connect(
+            url,
+            additional_headers=headers,
+            subprotocols=["openai-beta.realtime-v1"],
+        )
+
+        # 读一条 server 的欢迎帧（session.created）确认协议正常，顺便捕获服务端 hello 消息
+        try:
+            first = await asyncio.wait_for(ws.recv(), timeout=5.0)
+            logger.info("realtime welcome: %s", first[:500] if isinstance(first, str) else first[:500])
+        except asyncio.TimeoutError:
+            logger.warning("no welcome frame in 5s, proceeding to session.update")
 
         session_update = {
             "type": "session.update",
@@ -119,5 +131,11 @@ class OpenAIRealtimeProvider(RealtimeProvider):
         if tools:
             session_update["session"]["tools"] = tools
         await ws.send(json.dumps(session_update))
+        # 读 session.updated（或 error）；若是 error，日志里会带详细原因
+        try:
+            ack = await asyncio.wait_for(ws.recv(), timeout=5.0)
+            logger.info("session.update ack: %s", ack[:500] if isinstance(ack, str) else ack[:500])
+        except asyncio.TimeoutError:
+            logger.warning("no ack for session.update in 5s")
 
         return OpenAIRealtimeSession(ws)

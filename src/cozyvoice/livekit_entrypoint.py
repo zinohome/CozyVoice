@@ -290,7 +290,10 @@ def _main() -> None:
         level=os.environ.get("LOG_LEVEL", "INFO"),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
+    # 内部健康检查/指标 HTTP server 默认 :8081，与 1Panel/Caddy 冲突；
+    # 允许通过 LIVEKIT_AGENT_HTTP_PORT 覆盖（默认 8181）
+    http_port = int(os.environ.get("LIVEKIT_AGENT_HTTP_PORT", "8181"))
+    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, port=http_port))
 
 
 if __name__ == "__main__":

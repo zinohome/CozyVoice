@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <title>CozyVoice Realtime Demo</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <script src="https://unpkg.com/livekit-client/dist/livekit-client.umd.min.js"></script>
+  <!-- 本地 livekit-client（原 unpkg CDN 国内访问不稳导致 LivekitClient undefined） -->
+  <script src="./livekit-client.umd.min.js"></script>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; color: #222; }
     h1 { font-size: 20px; margin-bottom: 4px; }
