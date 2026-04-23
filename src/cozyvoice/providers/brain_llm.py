@@ -150,6 +150,11 @@ class _BrainLLMStream(LLMStream):
             timeout=httpx.Timeout(self._llm._timeout),
         )
 
+        import time as _time
+        t_start = _time.monotonic()
+        first_byte_at: float | None = None
+        first_chunk_at: float | None = None
+        chunk_count = 0
         try:
             try:
                 async with client.stream(
@@ -167,6 +172,8 @@ class _BrainLLMStream(LLMStream):
                         )
 
                     async for line in resp.aiter_lines():
+                        if first_byte_at is None:
+                            first_byte_at = _time.monotonic()
                         if not line:
                             continue
                         if not line.startswith("data:"):
@@ -186,12 +193,29 @@ class _BrainLLMStream(LLMStream):
                         if not content:
                             continue
 
+                        if first_chunk_at is None:
+                            first_chunk_at = _time.monotonic()
+                            logger.info(
+                                "brain_llm first chunk: connect=%.0fms first_byte=%.0fms first_chunk=%.0fms",
+                                (first_byte_at - t_start) * 1000 if first_byte_at else -1,
+                                (first_byte_at - t_start) * 1000 if first_byte_at else -1,
+                                (first_chunk_at - t_start) * 1000,
+                            )
+                        chunk_count += 1
+
                         self._event_ch.send_nowait(
                             ChatChunk(
                                 id=chunk_id,
                                 delta=ChoiceDelta(role="assistant", content=content),
                             )
                         )
+                # 完整耗时日志：看 10s 黑洞在哪
+                total = (_time.monotonic() - t_start) * 1000
+                logger.info(
+                    "brain_llm done: chunks=%d total=%.0fms",
+                    chunk_count,
+                    total,
+                )
             except APIStatusError:
                 raise
             except httpx.HTTPError as e:

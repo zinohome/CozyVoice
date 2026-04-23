@@ -28,6 +28,7 @@ dev = [
 pipeline = [
     "livekit-plugins-silero>=1.2",
     "livekit-plugins-openai>=1.2",
+    "livekit-plugins-deepgram>=1.2",
 ]
 
 [build-system]
