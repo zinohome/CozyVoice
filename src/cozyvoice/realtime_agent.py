@@ -120,14 +120,16 @@ async def _pump_events(rt_session, audio_out: asyncio.Queue, brain: BrainClient,
     async for event in rt_session.receive_events():
         etype = event.get("type", "")
 
-        if etype == "response.audio.delta":
+        # GA 事件名迁移：response.audio.* → response.output_audio.*
+        # 同时兼容 beta 名（历史 / 某些代理仍回传）
+        if etype in ("response.audio.delta", "response.output_audio.delta"):
             audio_b64 = event.get("delta") or ""
             if audio_b64:
                 await audio_out.put(base64.b64decode(audio_b64))
 
-        elif etype == "response.audio_transcript.delta":
+        elif etype in ("response.audio_transcript.delta", "response.output_audio_transcript.delta"):
             current_assistant_text += event.get("delta", "")
-        elif etype == "response.audio_transcript.done":
+        elif etype in ("response.audio_transcript.done", "response.output_audio_transcript.done"):
             if current_assistant_text:
                 state.turns.append({"role": "assistant", "content": current_assistant_text})
                 current_assistant_text = ""

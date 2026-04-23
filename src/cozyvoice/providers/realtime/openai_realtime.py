@@ -101,37 +101,40 @@ class OpenAIRealtimeProvider(RealtimeProvider):
         tools: list[dict] | None = None,
     ) -> RealtimeSession:
         url = f"{self._ws_base}?model={self._model}"
-        # OpenAI Realtime 要求 **只用 header 或 subprotocol 二选一**，
-        # 同时发两者 → 4000 "You must only send one beta header or protocol entry."
-        # 用 subprotocol-only（代理/浏览器通用兼容），不再发 OpenAI-Beta header。
+        # GA Realtime（2025 年后 OpenAI 把 Realtime 从 beta 转 GA）：
+        #   - 不再用 "OpenAI-Beta: realtime=v1" header
+        #   - 不再用 "openai-beta.realtime-v1" subprotocol
+        #   - 服务端 Python 直接 Authorization header 即可（浏览器侧走 subprotocol 带 ek）
+        #   - 子协议仅 ["realtime"]（某些代理会回传这个头，client 必须声明兼容）
         headers = {"Authorization": f"Bearer {self._api_key}"}
         ws = await websockets.connect(
             url,
             additional_headers=headers,
-            subprotocols=["openai-beta.realtime-v1"],
+            subprotocols=["realtime"],
         )
 
-        # 读一条 server 的欢迎帧（session.created）确认协议正常，顺便捕获服务端 hello 消息
+        # 读 session.created 欢迎帧
         try:
             first = await asyncio.wait_for(ws.recv(), timeout=5.0)
             logger.info("realtime welcome: %s", first[:500] if isinstance(first, str) else first[:500])
         except asyncio.TimeoutError:
             logger.warning("no welcome frame in 5s, proceeding to session.update")
 
-        session_update = {
-            "type": "session.update",
-            "session": {
-                "instructions": instructions,
-                "voice": voice,
-                "input_audio_format": "pcm16",
-                "output_audio_format": "pcm16",
-                "turn_detection": {"type": "server_vad"},
+        # GA session.update：audio.input / audio.output 嵌套结构
+        #   - PCM16 24kHz 是 GA 默认，不再显式指定 format
+        #   - turn_detection 移到 audio.input
+        #   - voice 移到 audio.output
+        session_payload: dict = {
+            "type": "realtime",
+            "instructions": instructions,
+            "audio": {
+                "input": {"turn_detection": {"type": "server_vad"}},
+                "output": {"voice": voice},
             },
         }
         if tools:
-            session_update["session"]["tools"] = tools
-        await ws.send(json.dumps(session_update))
-        # 读 session.updated（或 error）；若是 error，日志里会带详细原因
+            session_payload["tools"] = tools
+        await ws.send(json.dumps({"type": "session.update", "session": session_payload}))
         try:
             ack = await asyncio.wait_for(ws.recv(), timeout=5.0)
             logger.info("session.update ack: %s", ack[:500] if isinstance(ack, str) else ack[:500])

@@ -24,11 +24,19 @@ voice:
     port: ${VOICE_PORT:-8002}
 
   realtime:
+    # mode: openai | cozy_pipeline
+    #   openai        — OpenAI Realtime WS 直连（默认）
+    #   cozy_pipeline — 自建 VAD+STT+BrainLLM+TTS（需装 livekit-plugins-* extras）
+    # 运行时也可用 env COZYVOICE_REALTIME_MODE 覆盖。
+    mode: ${COZYVOICE_REALTIME_MODE:-openai}
     provider: openai_realtime
     openai:
       api_key: ${OPENAI_API_KEY}
       base_url: ${OPENAI_BASE_URL:-}   # 与 STT/Chat 共用；支持 Realtime 的代理（如 New-API）直接复用
       model: ${OPENAI_REALTIME_MODEL:-gpt-4o-realtime-preview}
+    cozy_pipeline:
+      stt: whisper   # openai whisper（MVP）；未来可切 deepgram/azure
+      tts: openai    # openai TTS（MVP）；第二步切 tencent
     # livekit 段留给 γ（TODO）：
     # livekit:
     #   url: ${LIVEKIT_URL}

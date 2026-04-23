@@ -10,11 +10,21 @@ import pytest
 from cozyvoice.providers.realtime.openai_realtime import OpenAIRealtimeProvider
 
 
-async def test_open_session_sends_session_update() -> None:
+def _make_fake_ws():
     fake_ws = MagicMock()
     fake_ws.send = AsyncMock()
     fake_ws.close = AsyncMock()
+    # open_session 会 await 2 次 recv（welcome + session.updated ack）
+    fake_ws.recv = AsyncMock(side_effect=[
+        json.dumps({"type": "session.created", "session": {"id": "sess_fake"}}),
+        json.dumps({"type": "session.updated", "session": {}}),
+    ])
+    return fake_ws
 
+
+async def test_open_session_sends_session_update_ga_format() -> None:
+    """GA 格式：session.type='realtime'，audio.input/output 嵌套。"""
+    fake_ws = _make_fake_ws()
     with patch("cozyvoice.providers.realtime.openai_realtime.websockets.connect",
                new=AsyncMock(return_value=fake_ws)) as mock_connect:
         provider = OpenAIRealtimeProvider(api_key="sk-test")
@@ -26,18 +36,22 @@ async def test_open_session_sends_session_update() -> None:
         assert session is not None
 
     mock_connect.assert_awaited_once()
+    # subprotocols 应只含 'realtime'（去 beta 标记）
+    kwargs = mock_connect.await_args.kwargs
+    assert kwargs.get("subprotocols") == ["realtime"]
+    # session.update 走 GA 嵌套结构
     sent = json.loads(fake_ws.send.await_args_list[0].args[0])
     assert sent["type"] == "session.update"
-    assert sent["session"]["instructions"] == "你是助手"
-    assert sent["session"]["voice"] == "alloy"
-    assert len(sent["session"]["tools"]) == 1
+    sess = sent["session"]
+    assert sess["type"] == "realtime"
+    assert sess["instructions"] == "你是助手"
+    assert sess["audio"]["output"]["voice"] == "alloy"
+    assert sess["audio"]["input"]["turn_detection"]["type"] == "server_vad"
+    assert len(sess["tools"]) == 1
 
 
 async def test_send_audio_base64() -> None:
-    fake_ws = MagicMock()
-    fake_ws.send = AsyncMock()
-    fake_ws.close = AsyncMock()
-
+    fake_ws = _make_fake_ws()
     with patch("cozyvoice.providers.realtime.openai_realtime.websockets.connect",
                new=AsyncMock(return_value=fake_ws)):
         provider = OpenAIRealtimeProvider(api_key="sk-test")
@@ -50,10 +64,7 @@ async def test_send_audio_base64() -> None:
 
 
 async def test_submit_tool_result_triggers_response_create() -> None:
-    fake_ws = MagicMock()
-    fake_ws.send = AsyncMock()
-    fake_ws.close = AsyncMock()
-
+    fake_ws = _make_fake_ws()
     with patch("cozyvoice.providers.realtime.openai_realtime.websockets.connect",
                new=AsyncMock(return_value=fake_ws)):
         provider = OpenAIRealtimeProvider(api_key="sk-test")

@@ -43,9 +43,15 @@ from typing import Any
 from livekit import rtc
 from livekit.agents import AutoSubscribe, JobContext, WorkerOptions, cli
 
+from cozyvoice.pipeline_agent import run_cozy_pipeline
 from cozyvoice.realtime_agent import RealtimeCallState, handle_realtime_call
 
 logger = logging.getLogger("cozyvoice.livekit_entrypoint")
+
+# Realtime 模式：
+#   "openai"        — 走 OpenAI Realtime WS（默认，handle_realtime_call）
+#   "cozy_pipeline" — 走自建 VAD+STT+BrainLLM+TTS 流水线（pipeline_agent）
+COZYVOICE_REALTIME_MODE_ENV = "COZYVOICE_REALTIME_MODE"
 
 # Realtime 默认 24kHz mono PCM16
 REALTIME_SAMPLE_RATE = 24_000
@@ -145,6 +151,30 @@ async def _handle_participant(
         )
         return
 
+    mode = (os.environ.get(COZYVOICE_REALTIME_MODE_ENV) or "openai").strip().lower()
+    if mode == "cozy_pipeline":
+        logger.info("using cozy_pipeline mode for participant %s", participant.identity)
+        brain_url = os.environ.get("BRAIN_URL", "http://localhost:8000")
+        voice = meta.get("voice") or None
+        try:
+            await run_cozy_pipeline(
+                ctx,
+                brain_url=brain_url,
+                brain_jwt=brain_jwt,
+                session_id=session_id,
+                personality_id=personality_id,
+                voice=voice,
+            )
+        except NotImplementedError as e:
+            logger.error(
+                "cozy_pipeline not yet implemented (%s); fallback to openai mode",
+                e,
+            )
+            # 继续走 openai 分支作为 fallback
+        else:
+            return
+
+    logger.info("using openai realtime mode for participant %s", participant.identity)
     audio_in: asyncio.Queue = asyncio.Queue(maxsize=128)
     audio_out: asyncio.Queue = asyncio.Queue(maxsize=128)
 
