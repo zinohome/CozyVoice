@@ -171,6 +171,14 @@ async def _handle_participant(
                 e,
             )
             # 继续走 openai 分支作为 fallback
+        except RuntimeError as e:
+            # pipeline 配置/环境错误（缺 key 等）：降级到 openai 而非 crash
+            # 代价：如果错的是 env 而非代码，你会发现"选了 cozy_pipeline 但实际跑 openai"
+            # 权衡：生产可用性优先；日志里有明确 error 便于排查
+            logger.error(
+                "cozy_pipeline runtime error (%s); fallback to openai mode",
+                e,
+            )
         else:
             return
 

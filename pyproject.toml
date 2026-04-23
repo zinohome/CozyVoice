@@ -25,6 +25,10 @@ dev = [
     "pytest-asyncio>=0.24",
     "ruff>=0.7",
 ]
+pipeline = [
+    "livekit-plugins-silero>=1.2",
+    "livekit-plugins-openai>=1.2",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
