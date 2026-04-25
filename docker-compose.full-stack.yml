@@ -1,0 +1,83 @@
+# Full-stack development compose: Brain + Memory + NanoBot + LiveKit + CozyVoice
+# Usage: docker compose -f docker-compose.full-stack.yml up -d
+#
+# Prerequisites:
+#   - Brain image: cd ../CozyEngineV2 && docker build -t cozy-brain .
+#   - Memory image: cd ../CozyMemory && docker build -t cozy-memory .
+#   - NanoBot image: cd ../nanobot && docker build -t cozy-nanobot .
+#   - CozyVoice image: docker build -t cozy-voice .
+
+services:
+
+  # ── Infrastructure ──
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cozy
+      POSTGRES_PASSWORD: cozy
+      POSTGRES_DB: cozyengine
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cozy"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Core Services ──
+  brain:
+    image: cozy-brain:latest
+    ports: ["8000:8000"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://cozy:cozy@postgres:5432/cozyengine
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-prod}
+      APP_ENV: development
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  memory:
+    image: cozy-memory:latest
+    ports: ["8001:8001"]
+    environment:
+      REDIS_URL: redis://redis:6379/1
+    depends_on:
+      redis: { condition: service_healthy }
+
+  nanobot:
+    image: cozy-nanobot:latest
+    ports: ["8080:8080"]
+
+  # ── Voice Layer ──
+  livekit:
+    image: livekit/livekit-server:v1.8
+    command: --dev --bind 0.0.0.0
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+
+  cozy-voice:
+    image: cozy-voice:latest
+    ports: ["8002:8002"]
+    env_file: [.env]
+    environment:
+      BRAIN_URL: http://brain:8000
+      LIVEKIT_URL: ws://livekit:7880
+      LOG_LEVEL: INFO
+    depends_on:
+      - brain
+      - livekit
+
+volumes:
+  pgdata:
