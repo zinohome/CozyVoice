@@ -17,6 +17,9 @@ from cozyvoice.providers.stt.mock import MockSTT
 from cozyvoice.providers.stt.openai_whisper import OpenAIWhisperSTT
 from cozyvoice.providers.tts.mock import MockTTS
 from cozyvoice.providers.tts.tencent import TencentTTS
+from cozyvoice.providers.tts.fallback import FallbackTTS
+from cozyvoice.providers.tts.openai_tts import OpenAITTS
+from cozyvoice.providers.tts.edge_tts_provider import EdgeTTS
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +40,38 @@ def _build_stt(cfg: dict):
 
 def _build_tts(cfg: dict):
     tts_cfg = cfg.get("tts", {})
-    provider = tts_cfg.get("provider", "mock")
-    if provider == "tencent":
-        tc = tts_cfg["tencent"]
-        return TencentTTS(secret_id=tc["secret_id"], secret_key=tc["secret_key"], region=tc.get("region", "ap-guangzhou"))
-    return MockTTS()
+    chain = tts_cfg.get("fallback_chain")
+    if not chain:
+        provider = tts_cfg.get("provider", "mock")
+        if provider == "tencent":
+            tc = tts_cfg["tencent"]
+            return TencentTTS(secret_id=tc["secret_id"], secret_key=tc["secret_key"], region=tc.get("region", "ap-guangzhou"))
+        return MockTTS()
+
+    providers = []
+    for entry in chain:
+        p_type = entry.get("provider", "")
+        timeout_s = entry.get("timeout_ms", 5000) / 1000.0
+        provider = None
+        if p_type == "tencent":
+            tc = entry.get("tencent", {})
+            sid, skey = tc.get("secret_id", ""), tc.get("secret_key", "")
+            if sid and skey:
+                provider = TencentTTS(secret_id=sid, secret_key=skey, region=tc.get("region", "ap-guangzhou"))
+        elif p_type == "openai":
+            oc = entry.get("openai", {})
+            api_key = oc.get("api_key", "")
+            if api_key:
+                provider = OpenAITTS(api_key=api_key, base_url=oc.get("base_url") or None)
+        elif p_type == "edge":
+            provider = EdgeTTS(default_voice=entry.get("voice_id", "zh-CN-XiaoxiaoNeural"))
+        if provider is not None:
+            provider.default_voice = entry.get("voice_id", "")
+            provider.timeout_s = timeout_s
+            providers.append(provider)
+    if not providers:
+        return MockTTS()
+    return FallbackTTS(providers=providers)
 
 
 @asynccontextmanager

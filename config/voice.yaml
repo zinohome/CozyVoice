@@ -7,13 +7,25 @@ voice:
       model: whisper-1
 
   tts:
-    provider: tencent
     default_voice_id: "101001"
     default_format: wav
-    tencent:
-      secret_id: ${TENCENT_SECRET_ID}
-      secret_key: ${TENCENT_SECRET_KEY}
-      region: ${TENCENT_REGION:-ap-guangzhou}
+    fallback_chain:
+      - provider: tencent
+        voice_id: "101001"
+        timeout_ms: 3000
+        tencent:
+          secret_id: ${TENCENT_SECRET_ID}
+          secret_key: ${TENCENT_SECRET_KEY}
+          region: ${TENCENT_REGION:-ap-guangzhou}
+      - provider: openai
+        voice_id: "shimmer"
+        timeout_ms: 5000
+        openai:
+          api_key: ${OPENAI_API_KEY}
+          base_url: ${OPENAI_BASE_URL:-}
+      - provider: edge
+        voice_id: "zh-CN-XiaoxiaoNeural"
+        timeout_ms: 5000
 
   brain:
     base_url: ${BRAIN_URL:-http://localhost:8000}
