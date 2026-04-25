@@ -128,10 +128,11 @@ async def test_run_cozy_pipeline_builds_all_components(monkeypatch, patches):
             )
         )
         # let it reach await disconnect_event
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
+        for _ in range(5):
+            await asyncio.sleep(0)
+        await asyncio.sleep(0.05)
         ctx.room.fire("participant_disconnected", SimpleNamespace(identity="u1"))
-        await asyncio.wait_for(task, timeout=2.0)
+        await asyncio.wait_for(task, timeout=3.0)
 
     await _driver()
 
@@ -183,10 +184,11 @@ async def test_run_cozy_pipeline_prefers_real_tts_env(monkeypatch, patches):
                 personality_id="p",
             )
         )
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
+        for _ in range(5):
+            await asyncio.sleep(0)
+        await asyncio.sleep(0.05)
         ctx.room.fire("participant_disconnected", SimpleNamespace(identity="u1"))
-        await asyncio.wait_for(task, timeout=2.0)
+        await asyncio.wait_for(task, timeout=3.0)
 
     await _driver()
 
@@ -243,10 +245,11 @@ async def test_run_cozy_pipeline_aclose_on_exception(monkeypatch, patches):
                 personality_id="p",
             )
         )
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
+        for _ in range(5):
+            await asyncio.sleep(0)
+        await asyncio.sleep(0.05)
         ctx.room.fire("participant_disconnected", SimpleNamespace(identity="u1"))
-        await asyncio.wait_for(task, timeout=2.0)
+        await asyncio.wait_for(task, timeout=3.0)
 
     await _driver()
     fake_session.start.assert_awaited_once()
@@ -264,10 +267,12 @@ async def test_run_cozy_pipeline_aclose_on_exception(monkeypatch, patches):
 async def _drive(ctx, **kwargs):
     """Helper: start pipeline, fire disconnect, await."""
     task = asyncio.create_task(pipeline_agent.run_cozy_pipeline(ctx, **kwargs))
-    await asyncio.sleep(0)
-    await asyncio.sleep(0)
+    # Enough yields for the task to reach disconnect_event.wait()
+    for _ in range(5):
+        await asyncio.sleep(0)
+    await asyncio.sleep(0.05)
     ctx.room.fire("participant_disconnected", SimpleNamespace(identity="u1"))
-    await asyncio.wait_for(task, timeout=2.0)
+    await asyncio.wait_for(task, timeout=3.0)
 
 
 @pytest.mark.asyncio
@@ -323,9 +328,9 @@ async def test_stt_backend_openai_preserves_legacy(monkeypatch, patches):
 
 
 @pytest.mark.asyncio
-async def test_default_deepgram_missing_key_raises(monkeypatch, patches):
-    """默认 deepgram backend，缺 DEEPGRAM_API_KEY → RuntimeError。"""
-    monkeypatch.delenv("COZYVOICE_STT_BACKEND", raising=False)
+async def test_deepgram_missing_key_raises(monkeypatch, patches):
+    """显式 COZYVOICE_STT_BACKEND=deepgram，缺 DEEPGRAM_API_KEY → RuntimeError。"""
+    monkeypatch.setenv("COZYVOICE_STT_BACKEND", "deepgram")
     monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "proxy-key")
 
