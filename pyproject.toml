@@ -17,6 +17,7 @@ dependencies = [
     "livekit-agents>=0.10",
     "livekit-api>=0.7",
     "websockets>=12",
+    "edge-tts>=6.1",
 ]
 
 [project.optional-dependencies]
