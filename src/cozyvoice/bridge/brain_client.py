@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import uuid
 
@@ -64,6 +65,49 @@ class BrainClient:
                 piece = delta.get("content") or ""
                 collected += piece
         return collected
+
+    async def chat_stream(
+        self,
+        jwt: str,
+        session_id: str | uuid.UUID,
+        personality_id: str | uuid.UUID,
+        message: str,
+    ):
+        """调 Brain SSE 端点，逐 chunk yield 文本。"""
+        if self._client is None:
+            raise RuntimeError("BrainClient not started")
+
+        headers = {
+            "Authorization": f"Bearer {jwt}",
+            "X-Source-Channel": "voice",
+            "Content-Type": "application/json",
+        }
+        body = {
+            "session_id": str(session_id),
+            "personality_id": str(personality_id),
+            "message": message,
+        }
+
+        stream_ctx = self._client.stream("POST", "/v1/chat/completions", json=body, headers=headers)
+        if inspect.isawaitable(stream_ctx):
+            stream_ctx = await stream_ctx
+        async with stream_ctx as resp:
+            if resp.status_code >= 400:
+                resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
+                payload = line[len("data: "):].strip()
+                if payload == "[DONE]":
+                    break
+                try:
+                    data = json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+                delta = (data.get("choices") or [{}])[0].get("delta") or {}
+                piece = delta.get("content") or ""
+                if piece:
+                    yield piece
 
     async def fetch_voice_context(
         self,
