@@ -271,11 +271,10 @@ async def _drive(ctx, **kwargs):
 
 
 @pytest.mark.asyncio
-async def test_default_stt_backend_is_deepgram(monkeypatch, patches):
-    """env 不设 COZYVOICE_STT_BACKEND → 走 Deepgram Nova-3 流式。"""
+async def test_default_stt_backend_is_openai(monkeypatch, patches):
+    """env 不设 COZYVOICE_STT_BACKEND → 默认走 OpenAI Whisper。"""
     captured, _ = patches
     monkeypatch.setenv("DEEPGRAM_API_KEY", "dg-key")
-    # Need OpenAI TTS fallback (default lang=multi is not in Aura supported set)
     monkeypatch.setenv("OPENAI_API_KEY", "proxy-key")
     monkeypatch.delenv("COZYVOICE_STT_BACKEND", raising=False)
     monkeypatch.delenv("COZYVOICE_TTS_BACKEND", raising=False)
@@ -291,19 +290,11 @@ async def test_default_stt_backend_is_deepgram(monkeypatch, patches):
         personality_id="p",
     )
 
-    # Deepgram STT constructed with nova-3 + interim + smart_format
-    assert "dg_stt_kwargs" in captured
-    dg = captured["dg_stt_kwargs"]
-    assert dg["api_key"] == "dg-key"
-    assert dg["model"] == "nova-3"
-    assert dg["interim_results"] is True
-    assert dg["smart_format"] is True
-    assert dg["language"] == "multi"
-    # OpenAI STT NOT constructed
-    assert "stt_kwargs" not in captured
-    # TTS fell back to OpenAI (Aura lacks Chinese / multi support)
-    assert "tts_kwargs" in captured
-    assert captured["tts_kwargs"]["api_key"] == "proxy-key"
+    # Default is OpenAI STT (not Deepgram)
+    assert "stt_kwargs" in captured
+    assert captured["stt_kwargs"]["api_key"] == "proxy-key"
+    # Deepgram STT NOT constructed
+    assert "dg_stt_kwargs" not in captured
 
 
 @pytest.mark.asyncio
