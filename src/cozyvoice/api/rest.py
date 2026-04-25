@@ -10,6 +10,26 @@ from fastapi.responses import Response
 router = APIRouter()
 
 
+@router.post("/voice/transcribe")
+async def transcribe(
+    request: Request,
+    audio: UploadFile = File(...),
+):
+    """Layer 1: pure STT — no Brain, no auth required."""
+    audio_bytes = await audio.read()
+    mime = audio.content_type or "audio/wav"
+    stt = request.app.state.stt
+    try:
+        result = await stt.transcribe(audio_bytes, mime_type=mime)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail={"error": {"code": "STT_FAILED", "message": str(e)[:200]}})
+    return {
+        "text": result.text,
+        "language": result.language,
+        "duration_ms": result.duration_ms,
+    }
+
+
 @router.post("/voice/chat")
 async def voice_chat(
     request: Request,

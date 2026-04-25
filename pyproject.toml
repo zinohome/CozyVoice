@@ -18,6 +18,7 @@ dependencies = [
     "livekit-api>=0.7",
     "websockets>=12",
     "edge-tts>=6.1",
+    "sse-starlette>=2.0",
 ]
 
 [project.optional-dependencies]
