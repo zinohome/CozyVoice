@@ -1,0 +1,16 @@
+# LiveKit Server production configuration
+# Docs: https://docs.livekit.io/realtime/self-hosting/deployment/
+port: 7880
+
+rtc:
+  port_range_start: 50000
+  port_range_end: 50200
+  use_external_ip: true
+
+# API keys — injected via environment variable substitution in docker-compose
+# LiveKit reads LIVEKIT_KEYS env var as "key: secret" pairs
+# Format: LIVEKIT_KEYS="api_key: api_secret"
+
+logging:
+  level: info
+  json: true
