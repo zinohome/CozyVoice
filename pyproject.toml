@@ -19,6 +19,7 @@ dependencies = [
     "websockets>=12",
     "edge-tts>=6.1",
     "sse-starlette>=2.0",
+    "prometheus_client>=0.20",
 ]
 
 [project.optional-dependencies]

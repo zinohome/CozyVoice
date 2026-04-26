@@ -8,9 +8,12 @@ from pathlib import Path
 from typing import AsyncIterator
 
 from fastapi import FastAPI
+from fastapi.responses import Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from cozyvoice import __version__
 from cozyvoice.api import rest, ws
+from cozyvoice.middleware.rate_limit import RateLimiter
 from cozyvoice.bridge.brain_client import BrainClient
 from cozyvoice.config.settings import load_config
 from cozyvoice.providers.stt.mock import MockSTT
@@ -82,6 +85,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.stt = _build_stt(cfg)
     app.state.tts = _build_tts(cfg)
     app.state.tts_config = cfg.get("tts", {})
+    app.state.rate_limiter = RateLimiter(requests_per_minute=30)
 
     brain_cfg = cfg.get("brain", {})
     brain_client = BrainClient(
@@ -104,6 +108,10 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health():
         return {"status": "ok", "version": __version__}
+
+    @app.get("/metrics")
+    async def metrics():
+        return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     return app
 

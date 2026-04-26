@@ -19,6 +19,9 @@ async def transcribe(
     audio: UploadFile = File(...),
 ):
     """Layer 1: pure STT — no Brain, no auth required."""
+    rate_limiter = getattr(request.app.state, "rate_limiter", None)
+    if rate_limiter is not None:
+        await rate_limiter.check(request)
     audio_bytes = await audio.read()
     mime = audio.content_type or "audio/wav"
     stt = request.app.state.stt
