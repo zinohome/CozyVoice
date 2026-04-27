@@ -21,4 +21,6 @@ RUN pip install -e . \
 USER cozy
 
 EXPOSE 8002
+HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8002/health', timeout=2)" || exit 1
 CMD ["uvicorn", "cozyvoice.main:app", "--host", "0.0.0.0", "--port", "8002"]
