@@ -14,6 +14,7 @@ def _make_request(ip: str = "127.0.0.1") -> MagicMock:
     req = MagicMock()
     req.client = MagicMock()
     req.client.host = ip
+    req.headers = {}
     return req
 
 
@@ -104,3 +105,48 @@ async def test_rate_limiter_integration_with_transcribe_endpoint():
     assert r1.status_code == 200
     assert r2.status_code == 200
     assert r3.status_code == 429
+
+
+def _make_request_with_headers(ip: str = "127.0.0.1", xff: str | None = None, xri: str | None = None) -> MagicMock:
+    req = MagicMock()
+    req.client = MagicMock()
+    req.client.host = ip
+    headers = {}
+    if xff is not None:
+        headers["x-forwarded-for"] = xff
+    if xri is not None:
+        headers["x-real-ip"] = xri
+    req.headers = headers
+    return req
+
+
+async def test_rate_limit_uses_x_forwarded_for():
+    limiter = RateLimiter(requests_per_minute=2)
+    req_a = _make_request_with_headers(ip="172.17.0.1", xff="10.0.0.1, 172.17.0.1")
+    req_b = _make_request_with_headers(ip="172.17.0.1", xff="10.0.0.2, 172.17.0.1")
+    await limiter.check(req_a)
+    await limiter.check(req_a)
+    await limiter.check(req_b)
+    await limiter.check(req_b)
+    with pytest.raises(HTTPException):
+        await limiter.check(req_a)
+    with pytest.raises(HTTPException):
+        await limiter.check(req_b)
+
+
+async def test_rate_limit_uses_x_real_ip_fallback():
+    limiter = RateLimiter(requests_per_minute=2)
+    req = _make_request_with_headers(ip="172.17.0.1", xri="192.168.1.100")
+    await limiter.check(req)
+    await limiter.check(req)
+    with pytest.raises(HTTPException):
+        await limiter.check(req)
+
+
+async def test_rate_limit_falls_back_to_client_host():
+    limiter = RateLimiter(requests_per_minute=2)
+    req = _make_request_with_headers(ip="10.10.10.10")
+    await limiter.check(req)
+    await limiter.check(req)
+    with pytest.raises(HTTPException):
+        await limiter.check(req)

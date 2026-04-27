@@ -8,15 +8,27 @@ from collections import defaultdict
 from fastapi import HTTPException, Request
 
 
+def _get_client_ip(request: Request) -> str:
+    """Extract client IP with proxy-awareness.
+    Priority: X-Forwarded-For (first IP) > X-Real-IP > request.client.host
+    """
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    xri = request.headers.get("x-real-ip")
+    if xri:
+        return xri.strip()
+    return request.client.host if request.client else "unknown"
+
+
 class RateLimiter:
     def __init__(self, requests_per_minute: int = 30) -> None:
         self._rpm = requests_per_minute
         self._requests: dict[str, list[float]] = defaultdict(list)
 
     async def check(self, request: Request) -> None:
-        ip = request.client.host if request.client else "unknown"
+        ip = _get_client_ip(request)
         now = time.monotonic()
-        # Clean old entries outside the 60-second window
         self._requests[ip] = [t for t in self._requests[ip] if now - t < 60]
         if len(self._requests[ip]) >= self._rpm:
             raise HTTPException(
