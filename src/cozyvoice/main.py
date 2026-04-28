@@ -109,6 +109,35 @@ def create_app() -> FastAPI:
     async def health():
         return {"status": "ok", "version": __version__}
 
+    @app.get("/health/ready")
+    async def health_ready():
+        from fastapi.responses import JSONResponse
+
+        checks: dict[str, str] = {}
+
+        # Check Brain connectivity
+        brain = getattr(app.state, "brain_client", None)
+        if brain and brain._client:
+            try:
+                r = await brain._client.get("/health", timeout=2.0)
+                checks["brain"] = "ok" if r.status_code == 200 else f"http_{r.status_code}"
+            except Exception as e:
+                checks["brain"] = f"down: {type(e).__name__}"
+        else:
+            checks["brain"] = "not_configured"
+
+        # Check STT provider
+        checks["stt"] = "ok" if getattr(app.state, "stt", None) else "not_configured"
+
+        # Check TTS provider
+        checks["tts"] = "ok" if getattr(app.state, "tts", None) else "not_configured"
+
+        all_ok = all(v == "ok" for v in checks.values())
+        return JSONResponse(
+            status_code=200 if all_ok else 503,
+            content={"status": "ready" if all_ok else "degraded", "checks": checks},
+        )
+
     @app.get("/metrics")
     async def metrics():
         return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
