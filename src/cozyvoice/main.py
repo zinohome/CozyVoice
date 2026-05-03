@@ -87,6 +87,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.tts_config = cfg.get("tts", {})
     app.state.rate_limiter = RateLimiter(requests_per_minute=30)
 
+    # TTS 凭据预检：启动时调用 list_voices() 验证凭据是否有效
+    if app.state.tts:
+        try:
+            voices = await app.state.tts.list_voices()
+            logger.info("TTS warm-up OK: %d voices available", len(voices))
+        except Exception as e:
+            logger.warning("TTS warm-up failed (will retry on first request): %s", type(e).__name__)
+
     brain_cfg = cfg.get("brain", {})
     brain_client = BrainClient(
         base_url=brain_cfg.get("base_url", "http://localhost:8000"),
